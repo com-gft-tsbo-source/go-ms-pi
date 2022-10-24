@@ -1,0 +1,5 @@
+CUSTOMER ?= com.gft.tsbo
+PROJECT ?= $(CUSTOMER).source
+MODULE ?= backend
+COMPONENT ?= ms-pi
+GIT_HOST ?= github.com
