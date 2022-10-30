@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net/http"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -30,6 +31,8 @@ type MsPi struct {
 
 // ###########################################################################
 
+var requestRegexp *regexp.Regexp
+
 // InitMsPiFromArgs ...
 func InitFromArgs(ms *MsPi, args []string, flagset *flag.FlagSet) *MsPi {
 	var cfg Configuration
@@ -45,12 +48,11 @@ func InitFromArgs(ms *MsPi, args []string, flagset *flag.FlagSet) *MsPi {
 	piHandler.Get = ms.httpGetPi
 	ms.AddHandler("/pi", piHandler)
 	ms.AddHandler("/pi/", piHandler)
+	requestRegexp = regexp.MustCompile("^.*/(?P<iterations>\\d+)(?:[.@/#-](?P<precision>\\d+))$")
 	return ms
 }
 
 // ---------------------------------------------------------------------------
-
-var deviceMutex sync.Mutex
 
 func (ms *MsPi) httpGetPi(w http.ResponseWriter, r *http.Request) (status int, contentLen int, msg string) {
 	var iterations uint
@@ -58,36 +60,51 @@ func (ms *MsPi) httpGetPi(w http.ResponseWriter, r *http.Request) (status int, c
 	var value string
 	var err error
 
-	if r.URL.Path == "/pi" {
-		iterations = 100
-		precision = 10
-	} else {
-    var i int
-		i, err = strconv.Atoi(r.URL.Path[4:])
-		iterations = uint(i)
-		if err != nil {
-			msg = fmt.Sprintf("Failed to read the number of iteration, error was '%s'!", err.Error())
-			http.Error(w, msg, http.StatusBadRequest)
-			return http.StatusBadRequest, 0, msg
+	iterations = 100
+	precision = 10
+
+	if r.URL.Path != "/pi" && r.URL.Path != "/pi/" {
+
+		match := requestRegexp.FindStringSubmatch(r.URL.Path)
+
+		if len(match) == 0 {
+			status = http.StatusInternalServerError
+			msg = "URL has bad format"
+			response := NewPiResponse(status, msg, ms)
+			w.WriteHeader(status)
+			contentLen = ms.Reply(w, response)
+			return status, contentLen, msg
 		}
-		precision = 1000
+
+		if len(match) >= 1 {
+			var i int
+			i, err = strconv.Atoi(match[1])
+
+			if err != nil {
+				msg = fmt.Sprintf("Failed to read the number of iteration, error was '%s'!", err.Error())
+				http.Error(w, msg, http.StatusBadRequest)
+				return http.StatusBadRequest, 0, msg
+			}
+
+			iterations = uint(i)
+		}
+
+		if len(match) >= 3 {
+			var i int
+			i, err = strconv.Atoi(match[2])
+
+			if err != nil {
+				msg = fmt.Sprintf("Failed to read the precision, error was '%s'!", err.Error())
+				http.Error(w, msg, http.StatusBadRequest)
+				return http.StatusBadRequest, 0, msg
+			}
+
+			precision = uint(i)
+		}
 	}
 
 	p := Pi(iterations, precision)
 	value = p.Text('f', int(precision))
-
-	// cosVal = float64(-1) // Start at cosine of 180 degrees
-	// n = 4
-
-	// for iterations > 0 {
-	// 	iterations -= 1
-	// 	cosVal = math.Sqrt(0.5 * (cosVal + 1.0))
-	// 	value = math.Sqrt(0.5 - 0.5*cosVal)
-	// 	fmt.Println(fmt.Sprintf("% 5d - %f", iterations, value*float64(n)))
-	// 	n *= 2
-	// }
-
-	// value = value * float64(n)
 
 	status = http.StatusOK
 	name := r.Header.Get("X-Cid")
@@ -96,6 +113,8 @@ func (ms *MsPi) httpGetPi(w http.ResponseWriter, r *http.Request) (status int, c
 	msg = fmt.Sprintf("'v%s' in '%s' Generated pi with '%d' iteration for client '%s@%s'.", ms.GetVersion(), environment, iterations, name, version)
 	response := NewPiResponse(status, msg, ms)
 	response.Value = value
+	response.Iterations = int(iterations)
+	response.Precision = int(precision)
 	ms.SetResponseHeaders("application/json; charset=utf-8", w, r)
 	w.WriteHeader(status)
 	contentLen = ms.Reply(w, response)

@@ -13,7 +13,9 @@ import (
 // PiResponse ...
 type PiResponse struct {
 	microservice.Response
-	Value string `json:"value"`
+	Value      string `json:"value"`
+	Iterations int    `json:"iterations"`
+	Precision  int    `json:"precision"`
 }
 
 // ###########################################################################
@@ -22,6 +24,8 @@ type PiResponse struct {
 func InitPiResponse(r *PiResponse, code int, status string, ms *MsPi) {
 	microservice.InitResponseFromMicroService(&r.Response, ms, code, status)
 	r.Value = "n/a"
+	r.Iterations = 0
+	r.Precision = 0
 }
 
 // NewPiResponse ...
